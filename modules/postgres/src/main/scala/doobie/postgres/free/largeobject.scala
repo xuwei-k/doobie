@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -41,7 +37,9 @@ object largeobject { module =>
       def raw[A](f: LargeObject => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => LargeObjectIO[A]): F[A]
       def handleErrorWith[A](fa: LargeObjectIO[A], f: Throwable => LargeObjectIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // LargeObject
@@ -78,10 +76,16 @@ object largeobject { module =>
     final case class Delay[A](a: () => A) extends LargeObjectOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: LargeObjectIO[A], f: Throwable => LargeObjectIO[A]) extends LargeObjectOp[A] {
+    case class Suspend[A](a: () => LargeObjectIO[A]) extends LargeObjectOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: LargeObjectIO[A], f: Throwable => LargeObjectIO[A]) extends LargeObjectOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends LargeObjectOp[A] {
+    case class RaiseError[A](t: Throwable) extends LargeObjectOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends LargeObjectOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -155,8 +159,9 @@ object largeobject { module =>
   def raw[A](f: LargeObject => A): LargeObjectIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[LargeObjectOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): LargeObjectIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => LargeObjectIO[A]): LargeObjectIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: LargeObjectIO[A], f: Throwable => LargeObjectIO[A]): LargeObjectIO[A] = FF.liftF[LargeObjectOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): LargeObjectIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): LargeObjectIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): LargeObjectIO[A] = FF.liftF[LargeObjectOp, A](Async1(k))
 
   // Smart constructors for LargeObject-specific operations.
@@ -191,7 +196,7 @@ object largeobject { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): LargeObjectIO[A] = module.async(k)
       def flatMap[A, B](fa: LargeObjectIO[A])(f: A => LargeObjectIO[B]): LargeObjectIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => LargeObjectIO[Either[A, B]]): LargeObjectIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => LargeObjectIO[A]): LargeObjectIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => LargeObjectIO[A]): LargeObjectIO[A] = module.suspend(thunk)
     }
 
 }

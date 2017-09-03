@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -45,7 +41,9 @@ object nclob { module =>
       def raw[A](f: NClob => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => NClobIO[A]): F[A]
       def handleErrorWith[A](fa: NClobIO[A], f: Throwable => NClobIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // NClob
@@ -75,10 +73,16 @@ object nclob { module =>
     final case class Delay[A](a: () => A) extends NClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: NClobIO[A], f: Throwable => NClobIO[A]) extends NClobOp[A] {
+    case class Suspend[A](a: () => NClobIO[A]) extends NClobOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: NClobIO[A], f: Throwable => NClobIO[A]) extends NClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends NClobOp[A] {
+    case class RaiseError[A](t: Throwable) extends NClobOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends NClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -131,8 +135,9 @@ object nclob { module =>
   def raw[A](f: NClob => A): NClobIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[NClobOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): NClobIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => NClobIO[A]): NClobIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: NClobIO[A], f: Throwable => NClobIO[A]): NClobIO[A] = FF.liftF[NClobOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): NClobIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): NClobIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): NClobIO[A] = FF.liftF[NClobOp, A](Async1(k))
 
   // Smart constructors for NClob-specific operations.
@@ -160,7 +165,7 @@ object nclob { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): NClobIO[A] = module.async(k)
       def flatMap[A, B](fa: NClobIO[A])(f: A => NClobIO[B]): NClobIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => NClobIO[Either[A, B]]): NClobIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => NClobIO[A]): NClobIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => NClobIO[A]): NClobIO[A] = module.suspend(thunk)
     }
 
 }

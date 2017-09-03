@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -44,7 +40,9 @@ object clob { module =>
       def raw[A](f: Clob => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => ClobIO[A]): F[A]
       def handleErrorWith[A](fa: ClobIO[A], f: Throwable => ClobIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // Clob
@@ -74,10 +72,16 @@ object clob { module =>
     final case class Delay[A](a: () => A) extends ClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: ClobIO[A], f: Throwable => ClobIO[A]) extends ClobOp[A] {
+    case class Suspend[A](a: () => ClobIO[A]) extends ClobOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: ClobIO[A], f: Throwable => ClobIO[A]) extends ClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends ClobOp[A] {
+    case class RaiseError[A](t: Throwable) extends ClobOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends ClobOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -130,8 +134,9 @@ object clob { module =>
   def raw[A](f: Clob => A): ClobIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[ClobOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): ClobIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => ClobIO[A]): ClobIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: ClobIO[A], f: Throwable => ClobIO[A]): ClobIO[A] = FF.liftF[ClobOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): ClobIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): ClobIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): ClobIO[A] = FF.liftF[ClobOp, A](Async1(k))
 
   // Smart constructors for Clob-specific operations.
@@ -159,7 +164,7 @@ object clob { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): ClobIO[A] = module.async(k)
       def flatMap[A, B](fa: ClobIO[A])(f: A => ClobIO[B]): ClobIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => ClobIO[Either[A, B]]): ClobIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => ClobIO[A]): ClobIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => ClobIO[A]): ClobIO[A] = module.suspend(thunk)
     }
 
 }

@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -42,7 +38,9 @@ object fastpath { module =>
       def raw[A](f: PGFastpath => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => FastpathIO[A]): F[A]
       def handleErrorWith[A](fa: FastpathIO[A], f: Throwable => FastpathIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // PGFastpath
@@ -70,10 +68,16 @@ object fastpath { module =>
     final case class Delay[A](a: () => A) extends FastpathOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: FastpathIO[A], f: Throwable => FastpathIO[A]) extends FastpathOp[A] {
+    case class Suspend[A](a: () => FastpathIO[A]) extends FastpathOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: FastpathIO[A], f: Throwable => FastpathIO[A]) extends FastpathOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends FastpathOp[A] {
+    case class RaiseError[A](t: Throwable) extends FastpathOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends FastpathOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -120,8 +124,9 @@ object fastpath { module =>
   def raw[A](f: PGFastpath => A): FastpathIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[FastpathOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): FastpathIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => FastpathIO[A]): FastpathIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: FastpathIO[A], f: Throwable => FastpathIO[A]): FastpathIO[A] = FF.liftF[FastpathOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): FastpathIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): FastpathIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): FastpathIO[A] = FF.liftF[FastpathOp, A](Async1(k))
 
   // Smart constructors for Fastpath-specific operations.
@@ -147,7 +152,7 @@ object fastpath { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): FastpathIO[A] = module.async(k)
       def flatMap[A, B](fa: FastpathIO[A])(f: A => FastpathIO[B]): FastpathIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => FastpathIO[Either[A, B]]): FastpathIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => FastpathIO[A]): FastpathIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => FastpathIO[A]): FastpathIO[A] = module.suspend(thunk)
     }
 
 }

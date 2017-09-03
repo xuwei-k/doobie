@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -40,7 +36,9 @@ object largeobjectmanager { module =>
       def raw[A](f: LargeObjectManager => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => LargeObjectManagerIO[A]): F[A]
       def handleErrorWith[A](fa: LargeObjectManagerIO[A], f: Throwable => LargeObjectManagerIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // LargeObjectManager
@@ -73,10 +71,16 @@ object largeobjectmanager { module =>
     final case class Delay[A](a: () => A) extends LargeObjectManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: LargeObjectManagerIO[A], f: Throwable => LargeObjectManagerIO[A]) extends LargeObjectManagerOp[A] {
+    case class Suspend[A](a: () => LargeObjectManagerIO[A]) extends LargeObjectManagerOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: LargeObjectManagerIO[A], f: Throwable => LargeObjectManagerIO[A]) extends LargeObjectManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends LargeObjectManagerOp[A] {
+    case class RaiseError[A](t: Throwable) extends LargeObjectManagerOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends LargeObjectManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -138,8 +142,9 @@ object largeobjectmanager { module =>
   def raw[A](f: LargeObjectManager => A): LargeObjectManagerIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[LargeObjectManagerOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): LargeObjectManagerIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => LargeObjectManagerIO[A]): LargeObjectManagerIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: LargeObjectManagerIO[A], f: Throwable => LargeObjectManagerIO[A]): LargeObjectManagerIO[A] = FF.liftF[LargeObjectManagerOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): LargeObjectManagerIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): LargeObjectManagerIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): LargeObjectManagerIO[A] = FF.liftF[LargeObjectManagerOp, A](Async1(k))
 
   // Smart constructors for LargeObjectManager-specific operations.
@@ -170,7 +175,7 @@ object largeobjectmanager { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): LargeObjectManagerIO[A] = module.async(k)
       def flatMap[A, B](fa: LargeObjectManagerIO[A])(f: A => LargeObjectManagerIO[B]): LargeObjectManagerIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => LargeObjectManagerIO[Either[A, B]]): LargeObjectManagerIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => LargeObjectManagerIO[A]): LargeObjectManagerIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => LargeObjectManagerIO[A]): LargeObjectManagerIO[A] = module.suspend(thunk)
     }
 
 }

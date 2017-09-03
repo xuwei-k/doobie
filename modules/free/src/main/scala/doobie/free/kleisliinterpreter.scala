@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 // Library imports
@@ -99,6 +95,7 @@ trait KleisliInterpreter[M[_]] { outer =>
   def primitive[J, A](f: J => A): Kleisli[M, J, A] = Kleisli(a => M.delay(f(a)))
   def delay[J, A](a: () => A): Kleisli[M, J, A] = Kleisli(_ => M.delay(a()))
   def raw[J, A](f: J => A): Kleisli[M, J, A] = primitive(f)
+  def raiseError[J, A](t: Throwable): Kleisli[M, J, A] = Kleisli(a => M.raiseError(t))
   def async[J, A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, J, A] = Kleisli(_ => M.async(k))
   def embed[J, A](e: Embedded[A]): Kleisli[M, J, A] =
     e match {
@@ -126,14 +123,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, NClob, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, NClob, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, NClob, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, NClob, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: NClobIO[A], f: Throwable => NClobIO[A]): Kleisli[M, NClob, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(NClobInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(NClobInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => NClobIO[A]): Kleisli[M, NClob, A] =
+      Kleisli { j => a().foldMap(NClobInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def free = primitive(_.free)
@@ -159,14 +161,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Blob, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Blob, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Blob, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Blob, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: BlobIO[A], f: Throwable => BlobIO[A]): Kleisli[M, Blob, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(BlobInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(BlobInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => BlobIO[A]): Kleisli[M, Blob, A] =
+      Kleisli { j => a().foldMap(BlobInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def free = primitive(_.free)
@@ -190,14 +197,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Clob, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Clob, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Clob, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Clob, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: ClobIO[A], f: Throwable => ClobIO[A]): Kleisli[M, Clob, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(ClobInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(ClobInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => ClobIO[A]): Kleisli[M, Clob, A] =
+      Kleisli { j => a().foldMap(ClobInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def free = primitive(_.free)
@@ -223,14 +235,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, DatabaseMetaData, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, DatabaseMetaData, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, DatabaseMetaData, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, DatabaseMetaData, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: DatabaseMetaDataIO[A], f: Throwable => DatabaseMetaDataIO[A]): Kleisli[M, DatabaseMetaData, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(DatabaseMetaDataInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(DatabaseMetaDataInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => DatabaseMetaDataIO[A]): Kleisli[M, DatabaseMetaData, A] =
+      Kleisli { j => a().foldMap(DatabaseMetaDataInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def allProceduresAreCallable = primitive(_.allProceduresAreCallable)
@@ -421,14 +438,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Driver, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Driver, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Driver, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Driver, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: DriverIO[A], f: Throwable => DriverIO[A]): Kleisli[M, Driver, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(DriverInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(DriverInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => DriverIO[A]): Kleisli[M, Driver, A] =
+      Kleisli { j => a().foldMap(DriverInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def acceptsURL(a: String) = primitive(_.acceptsURL(a))
@@ -448,14 +470,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Ref, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Ref, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Ref, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Ref, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: RefIO[A], f: Throwable => RefIO[A]): Kleisli[M, Ref, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(RefInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(RefInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => RefIO[A]): Kleisli[M, Ref, A] =
+      Kleisli { j => a().foldMap(RefInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def getBaseTypeName = primitive(_.getBaseTypeName)
@@ -472,14 +499,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, SQLData, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, SQLData, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, SQLData, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, SQLData, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: SQLDataIO[A], f: Throwable => SQLDataIO[A]): Kleisli[M, SQLData, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(SQLDataInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(SQLDataInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => SQLDataIO[A]): Kleisli[M, SQLData, A] =
+      Kleisli { j => a().foldMap(SQLDataInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def getSQLTypeName = primitive(_.getSQLTypeName)
@@ -495,14 +527,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, SQLInput, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, SQLInput, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, SQLInput, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, SQLInput, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: SQLInputIO[A], f: Throwable => SQLInputIO[A]): Kleisli[M, SQLInput, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(SQLInputInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(SQLInputInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => SQLInputIO[A]): Kleisli[M, SQLInput, A] =
+      Kleisli { j => a().foldMap(SQLInputInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def readArray = primitive(_.readArray)
@@ -543,14 +580,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, SQLOutput, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, SQLOutput, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, SQLOutput, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, SQLOutput, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: SQLOutputIO[A], f: Throwable => SQLOutputIO[A]): Kleisli[M, SQLOutput, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(SQLOutputInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(SQLOutputInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => SQLOutputIO[A]): Kleisli[M, SQLOutput, A] =
+      Kleisli { j => a().foldMap(SQLOutputInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def writeArray(a: SqlArray) = primitive(_.writeArray(a))
@@ -591,14 +633,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Connection, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Connection, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Connection, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Connection, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: ConnectionIO[A], f: Throwable => ConnectionIO[A]): Kleisli[M, Connection, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(ConnectionInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(ConnectionInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => ConnectionIO[A]): Kleisli[M, Connection, A] =
+      Kleisli { j => a().foldMap(ConnectionInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def abort(a: Executor) = primitive(_.abort(a))
@@ -665,14 +712,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, Statement, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, Statement, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, Statement, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, Statement, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: StatementIO[A], f: Throwable => StatementIO[A]): Kleisli[M, Statement, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(StatementInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(StatementInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => StatementIO[A]): Kleisli[M, Statement, A] =
+      Kleisli { j => a().foldMap(StatementInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def addBatch(a: String) = primitive(_.addBatch(a))
@@ -737,14 +789,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, PreparedStatement, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, PreparedStatement, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, PreparedStatement, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, PreparedStatement, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: PreparedStatementIO[A], f: Throwable => PreparedStatementIO[A]): Kleisli[M, PreparedStatement, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(PreparedStatementInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(PreparedStatementInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => PreparedStatementIO[A]): Kleisli[M, PreparedStatement, A] =
+      Kleisli { j => a().foldMap(PreparedStatementInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def addBatch = primitive(_.addBatch)
@@ -867,14 +924,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, CallableStatement, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, CallableStatement, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, CallableStatement, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, CallableStatement, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: CallableStatementIO[A], f: Throwable => CallableStatementIO[A]): Kleisli[M, CallableStatement, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(CallableStatementInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(CallableStatementInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => CallableStatementIO[A]): Kleisli[M, CallableStatement, A] =
+      Kleisli { j => a().foldMap(CallableStatementInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def addBatch = primitive(_.addBatch)
@@ -1118,14 +1180,19 @@ trait KleisliInterpreter[M[_]] { outer =>
     override def embed[A](e: Embedded[A]): Kleisli[M, ResultSet, A] = outer.embed(e)
     override def delay[A](a: () => A): Kleisli[M, ResultSet, A] = outer.delay(a)
     override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, ResultSet, A] = outer.async(k)
+    override def raiseError[A](t: Throwable): Kleisli[M, ResultSet, A] = outer.raiseError(t)
 
     // for handleErrorWith we must call ourself recursively
     override def handleErrorWith[A](fa: ResultSetIO[A], f: Throwable => ResultSetIO[A]): Kleisli[M, ResultSet, A] =
       Kleisli { j =>
-        val faʹ = fa.foldMap(this).run(j)
-        val fʹ  = f.andThen(_.foldMap(this).run(j))
+        val faʹ = fa.foldMap(ResultSetInterpreter).run(j)
+        val fʹ  = f.andThen(_.foldMap(ResultSetInterpreter).run(j))
         M.handleErrorWith(faʹ)(fʹ)
       }
+
+    // for suspend we must call ourself recursively
+    override def suspend[A](a: () => ResultSetIO[A]): Kleisli[M, ResultSet, A] =
+      Kleisli { j => a().foldMap(ResultSetInterpreter).run(j) }
 
     // domain-specific operations are implemented in terms of `primitive`
     override def absolute(a: Int) = primitive(_.absolute(a))

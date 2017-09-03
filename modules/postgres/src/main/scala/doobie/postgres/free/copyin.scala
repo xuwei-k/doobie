@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -39,7 +35,9 @@ object copyin { module =>
       def raw[A](f: PGCopyIn => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => CopyInIO[A]): F[A]
       def handleErrorWith[A](fa: CopyInIO[A], f: Throwable => CopyInIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // PGCopyIn
@@ -65,10 +63,16 @@ object copyin { module =>
     final case class Delay[A](a: () => A) extends CopyInOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: CopyInIO[A], f: Throwable => CopyInIO[A]) extends CopyInOp[A] {
+    case class Suspend[A](a: () => CopyInIO[A]) extends CopyInOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: CopyInIO[A], f: Throwable => CopyInIO[A]) extends CopyInOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends CopyInOp[A] {
+    case class RaiseError[A](t: Throwable) extends CopyInOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends CopyInOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -109,8 +113,9 @@ object copyin { module =>
   def raw[A](f: PGCopyIn => A): CopyInIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[CopyInOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): CopyInIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => CopyInIO[A]): CopyInIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: CopyInIO[A], f: Throwable => CopyInIO[A]): CopyInIO[A] = FF.liftF[CopyInOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): CopyInIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): CopyInIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): CopyInIO[A] = FF.liftF[CopyInOp, A](Async1(k))
 
   // Smart constructors for CopyIn-specific operations.
@@ -134,7 +139,7 @@ object copyin { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): CopyInIO[A] = module.async(k)
       def flatMap[A, B](fa: CopyInIO[A])(f: A => CopyInIO[B]): CopyInIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => CopyInIO[Either[A, B]]): CopyInIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => CopyInIO[A]): CopyInIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => CopyInIO[A]): CopyInIO[A] = module.suspend(thunk)
     }
 
 }

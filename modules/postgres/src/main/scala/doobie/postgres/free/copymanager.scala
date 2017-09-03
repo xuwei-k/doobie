@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -47,7 +43,9 @@ object copymanager { module =>
       def raw[A](f: PGCopyManager => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => CopyManagerIO[A]): F[A]
       def handleErrorWith[A](fa: CopyManagerIO[A], f: Throwable => CopyManagerIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // PGCopyManager
@@ -73,10 +71,16 @@ object copymanager { module =>
     final case class Delay[A](a: () => A) extends CopyManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: CopyManagerIO[A], f: Throwable => CopyManagerIO[A]) extends CopyManagerOp[A] {
+    case class Suspend[A](a: () => CopyManagerIO[A]) extends CopyManagerOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: CopyManagerIO[A], f: Throwable => CopyManagerIO[A]) extends CopyManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends CopyManagerOp[A] {
+    case class RaiseError[A](t: Throwable) extends CopyManagerOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends CopyManagerOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -117,8 +121,9 @@ object copymanager { module =>
   def raw[A](f: PGCopyManager => A): CopyManagerIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[CopyManagerOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): CopyManagerIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => CopyManagerIO[A]): CopyManagerIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: CopyManagerIO[A], f: Throwable => CopyManagerIO[A]): CopyManagerIO[A] = FF.liftF[CopyManagerOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): CopyManagerIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): CopyManagerIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): CopyManagerIO[A] = FF.liftF[CopyManagerOp, A](Async1(k))
 
   // Smart constructors for CopyManager-specific operations.
@@ -142,7 +147,7 @@ object copymanager { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): CopyManagerIO[A] = module.async(k)
       def flatMap[A, B](fa: CopyManagerIO[A])(f: A => CopyManagerIO[B]): CopyManagerIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => CopyManagerIO[Either[A, B]]): CopyManagerIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => CopyManagerIO[A]): CopyManagerIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => CopyManagerIO[A]): CopyManagerIO[A] = module.suspend(thunk)
     }
 
 }

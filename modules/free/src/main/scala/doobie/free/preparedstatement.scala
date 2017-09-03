@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -62,7 +58,9 @@ object preparedstatement { module =>
       def raw[A](f: PreparedStatement => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => PreparedStatementIO[A]): F[A]
       def handleErrorWith[A](fa: PreparedStatementIO[A], f: Throwable => PreparedStatementIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // PreparedStatement
@@ -189,10 +187,16 @@ object preparedstatement { module =>
     final case class Delay[A](a: () => A) extends PreparedStatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: PreparedStatementIO[A], f: Throwable => PreparedStatementIO[A]) extends PreparedStatementOp[A] {
+    case class Suspend[A](a: () => PreparedStatementIO[A]) extends PreparedStatementOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: PreparedStatementIO[A], f: Throwable => PreparedStatementIO[A]) extends PreparedStatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends PreparedStatementOp[A] {
+    case class RaiseError[A](t: Throwable) extends PreparedStatementOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends PreparedStatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -536,8 +540,9 @@ object preparedstatement { module =>
   def raw[A](f: PreparedStatement => A): PreparedStatementIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[PreparedStatementOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): PreparedStatementIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => PreparedStatementIO[A]): PreparedStatementIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: PreparedStatementIO[A], f: Throwable => PreparedStatementIO[A]): PreparedStatementIO[A] = FF.liftF[PreparedStatementOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): PreparedStatementIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): PreparedStatementIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): PreparedStatementIO[A] = FF.liftF[PreparedStatementOp, A](Async1(k))
 
   // Smart constructors for PreparedStatement-specific operations.
@@ -662,7 +667,7 @@ object preparedstatement { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): PreparedStatementIO[A] = module.async(k)
       def flatMap[A, B](fa: PreparedStatementIO[A])(f: A => PreparedStatementIO[B]): PreparedStatementIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => PreparedStatementIO[Either[A, B]]): PreparedStatementIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => PreparedStatementIO[A]): PreparedStatementIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => PreparedStatementIO[A]): PreparedStatementIO[A] = module.suspend(thunk)
     }
 
 }

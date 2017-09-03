@@ -242,7 +242,9 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
     |      def raw[A](f: $sname => A): F[A]
     |      def embed[A](e: Embedded[A]): F[A]
     |      def delay[A](a: () => A): F[A]
+    |      def suspend[A](a: () => ${ioname}[A]): F[A]
     |      def handleErrorWith[A](fa: ${ioname}[A], f: Throwable => ${ioname}[A]): F[A]
+    |      def raiseError[A](t: Throwable): F[A]
     |      def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
     |
     |      // $sname
@@ -260,10 +262,16 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
     |    final case class Delay[A](a: () => A) extends ${opname}[A] {
     |      def visit[F[_]](v: Visitor[F]) = v.delay(a)
     |    }
-    |    final case class HandleErrorWith[A](fa: ${ioname}[A], f: Throwable => ${ioname}[A]) extends ${opname}[A] {
+    |    case class Suspend[A](a: () => ${ioname}[A]) extends ${opname}[A] {
+    |      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    |    }
+    |    case class HandleErrorWith[A](fa: ${ioname}[A], f: Throwable => ${ioname}[A]) extends ${opname}[A] {
     |      def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     |    }
-    |    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends ${opname}[A] {
+    |    case class RaiseError[A](t: Throwable) extends ${opname}[A] {
+    |      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    |    }
+    |    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends ${opname}[A] {
     |      def visit[F[_]](v: Visitor[F]) = v.async(k)
     |    }
     |
@@ -278,8 +286,9 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
     |  def raw[A](f: $sname => A): ${ioname}[A] = FF.liftF(Raw(f))
     |  def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[${opname}, A] = FF.liftF(Embed(ev.embed(j, fa)))
     |  def delay[A](a: => A): ${ioname}[A] = FF.liftF(Delay(() => a))
+    |  def suspend[A](a: => $ioname[A]): ${ioname}[A] = FF.liftF(Suspend(() => a))
     |  def handleErrorWith[A](fa: ${ioname}[A], f: Throwable => ${ioname}[A]): ${ioname}[A] = FF.liftF[${opname}, A](HandleErrorWith(fa, f))
-    |  def raiseError[A](err: Throwable): ${ioname}[A] = delay(throw err)
+    |  def raiseError[A](err: Throwable): ${ioname}[A] = FF.liftF(RaiseError(err))
     |  def async[A](k: (Either[Throwable, A] => Unit) => Unit): ${ioname}[A] = FF.liftF[${opname}, A](Async1(k))
     |
     |  // Smart constructors for $oname-specific operations.
@@ -295,7 +304,7 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
     |      def async[A](k: (Either[Throwable,A] => Unit) => Unit): ${ioname}[A] = module.async(k)
     |      def flatMap[A, B](fa: ${ioname}[A])(f: A => ${ioname}[B]): ${ioname}[B] = M.flatMap(fa)(f)
     |      def tailRecM[A, B](a: A)(f: A => ${ioname}[Either[A, B]]): ${ioname}[B] = M.tailRecM(a)(f)
-    |      def suspend[A](thunk: => ${ioname}[A]): ${ioname}[A] = M.flatten(module.delay(thunk))
+    |      def suspend[A](thunk: => ${ioname}[A]): ${ioname}[A] = module.suspend(thunk)
     |    }
     |
     |}
@@ -348,14 +357,19 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
        |    override def embed[A](e: Embedded[A]): Kleisli[M, $sname, A] = outer.embed(e)
        |    override def delay[A](a: () => A): Kleisli[M, $sname, A] = outer.delay(a)
        |    override def async[A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, $sname, A] = outer.async(k)
+       |    override def raiseError[A](t: Throwable): Kleisli[M, $sname, A] = outer.raiseError(t)
        |
        |    // for handleErrorWith we must call ourself recursively
        |    override def handleErrorWith[A](fa: ${ioname}[A], f: Throwable => ${ioname}[A]): Kleisli[M, $sname, A] =
        |      Kleisli { j =>
-       |        val faʹ = fa.foldMap(this).run(j)
-       |        val fʹ  = f.andThen(_.foldMap(this).run(j))
+       |        val faʹ = fa.foldMap(${oname}Interpreter).run(j)
+       |        val fʹ  = f.andThen(_.foldMap(${oname}Interpreter).run(j))
        |        M.handleErrorWith(faʹ)(fʹ)
        |      }
+       |
+       |    // for suspend we must call ourself recursively
+       |    override def suspend[A](a: () => ${ioname}[A]): Kleisli[M, $sname, A] =
+       |      Kleisli { j => a().foldMap(${oname}Interpreter).run(j) }
        |
        |    // domain-specific operations are implemented in terms of `primitive`
        |${ctors[A].map(_.kleisliImpl).mkString("\n")}
@@ -408,6 +422,7 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
       |  def primitive[J, A](f: J => A): Kleisli[M, J, A] = Kleisli(a => M.delay(f(a)))
       |  def delay[J, A](a: () => A): Kleisli[M, J, A] = Kleisli(_ => M.delay(a()))
       |  def raw[J, A](f: J => A): Kleisli[M, J, A] = primitive(f)
+      |  def raiseError[J, A](t: Throwable): Kleisli[M, J, A] = Kleisli(a => M.raiseError(t))
       |  def async[J, A](k: (Either[Throwable, A] => Unit) => Unit): Kleisli[M, J, A] = Kleisli(_ => M.async(k))
       |  def embed[J, A](e: Embedded[A]): Kleisli[M, J, A] =
       |    e match {

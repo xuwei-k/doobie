@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -44,7 +40,9 @@ object statement { module =>
       def raw[A](f: Statement => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => StatementIO[A]): F[A]
       def handleErrorWith[A](fa: StatementIO[A], f: Throwable => StatementIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // Statement
@@ -113,10 +111,16 @@ object statement { module =>
     final case class Delay[A](a: () => A) extends StatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: StatementIO[A], f: Throwable => StatementIO[A]) extends StatementOp[A] {
+    case class Suspend[A](a: () => StatementIO[A]) extends StatementOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: StatementIO[A], f: Throwable => StatementIO[A]) extends StatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends StatementOp[A] {
+    case class RaiseError[A](t: Throwable) extends StatementOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends StatementOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -286,8 +290,9 @@ object statement { module =>
   def raw[A](f: Statement => A): StatementIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[StatementOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): StatementIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => StatementIO[A]): StatementIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: StatementIO[A], f: Throwable => StatementIO[A]): StatementIO[A] = FF.liftF[StatementOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): StatementIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): StatementIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): StatementIO[A] = FF.liftF[StatementOp, A](Async1(k))
 
   // Smart constructors for Statement-specific operations.
@@ -354,7 +359,7 @@ object statement { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): StatementIO[A] = module.async(k)
       def flatMap[A, B](fa: StatementIO[A])(f: A => StatementIO[B]): StatementIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => StatementIO[Either[A, B]]): StatementIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => StatementIO[A]): StatementIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => StatementIO[A]): StatementIO[A] = module.suspend(thunk)
     }
 
 }

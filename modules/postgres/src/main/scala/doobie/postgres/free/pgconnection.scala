@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.postgres.free
 
 import cats.~>
@@ -48,7 +44,9 @@ object pgconnection { module =>
       def raw[A](f: PGConnection => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => PGConnectionIO[A]): F[A]
       def handleErrorWith[A](fa: PGConnectionIO[A], f: Throwable => PGConnectionIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // PGConnection
@@ -83,10 +81,16 @@ object pgconnection { module =>
     final case class Delay[A](a: () => A) extends PGConnectionOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: PGConnectionIO[A], f: Throwable => PGConnectionIO[A]) extends PGConnectionOp[A] {
+    case class Suspend[A](a: () => PGConnectionIO[A]) extends PGConnectionOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: PGConnectionIO[A], f: Throwable => PGConnectionIO[A]) extends PGConnectionOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends PGConnectionOp[A] {
+    case class RaiseError[A](t: Throwable) extends PGConnectionOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends PGConnectionOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -154,8 +158,9 @@ object pgconnection { module =>
   def raw[A](f: PGConnection => A): PGConnectionIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[PGConnectionOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): PGConnectionIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => PGConnectionIO[A]): PGConnectionIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: PGConnectionIO[A], f: Throwable => PGConnectionIO[A]): PGConnectionIO[A] = FF.liftF[PGConnectionOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): PGConnectionIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): PGConnectionIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): PGConnectionIO[A] = FF.liftF[PGConnectionOp, A](Async1(k))
 
   // Smart constructors for PGConnection-specific operations.
@@ -188,7 +193,7 @@ object pgconnection { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): PGConnectionIO[A] = module.async(k)
       def flatMap[A, B](fa: PGConnectionIO[A])(f: A => PGConnectionIO[B]): PGConnectionIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => PGConnectionIO[Either[A, B]]): PGConnectionIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => PGConnectionIO[A]): PGConnectionIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => PGConnectionIO[A]): PGConnectionIO[A] = module.suspend(thunk)
     }
 
 }

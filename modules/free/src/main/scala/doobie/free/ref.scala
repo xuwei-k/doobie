@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -41,7 +37,9 @@ object ref { module =>
       def raw[A](f: Ref => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => RefIO[A]): F[A]
       def handleErrorWith[A](fa: RefIO[A], f: Throwable => RefIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // Ref
@@ -62,10 +60,16 @@ object ref { module =>
     final case class Delay[A](a: () => A) extends RefOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: RefIO[A], f: Throwable => RefIO[A]) extends RefOp[A] {
+    case class Suspend[A](a: () => RefIO[A]) extends RefOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: RefIO[A], f: Throwable => RefIO[A]) extends RefOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends RefOp[A] {
+    case class RaiseError[A](t: Throwable) extends RefOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends RefOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -91,8 +95,9 @@ object ref { module =>
   def raw[A](f: Ref => A): RefIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[RefOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): RefIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => RefIO[A]): RefIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: RefIO[A], f: Throwable => RefIO[A]): RefIO[A] = FF.liftF[RefOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): RefIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): RefIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): RefIO[A] = FF.liftF[RefOp, A](Async1(k))
 
   // Smart constructors for Ref-specific operations.
@@ -111,7 +116,7 @@ object ref { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): RefIO[A] = module.async(k)
       def flatMap[A, B](fa: RefIO[A])(f: A => RefIO[B]): RefIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => RefIO[Either[A, B]]): RefIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => RefIO[A]): RefIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => RefIO[A]): RefIO[A] = module.suspend(thunk)
     }
 
 }

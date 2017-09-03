@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -42,7 +38,9 @@ object sqldata { module =>
       def raw[A](f: SQLData => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => SQLDataIO[A]): F[A]
       def handleErrorWith[A](fa: SQLDataIO[A], f: Throwable => SQLDataIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // SQLData
@@ -62,10 +60,16 @@ object sqldata { module =>
     final case class Delay[A](a: () => A) extends SQLDataOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: SQLDataIO[A], f: Throwable => SQLDataIO[A]) extends SQLDataOp[A] {
+    case class Suspend[A](a: () => SQLDataIO[A]) extends SQLDataOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: SQLDataIO[A], f: Throwable => SQLDataIO[A]) extends SQLDataOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends SQLDataOp[A] {
+    case class RaiseError[A](t: Throwable) extends SQLDataOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends SQLDataOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -88,8 +92,9 @@ object sqldata { module =>
   def raw[A](f: SQLData => A): SQLDataIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[SQLDataOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): SQLDataIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => SQLDataIO[A]): SQLDataIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: SQLDataIO[A], f: Throwable => SQLDataIO[A]): SQLDataIO[A] = FF.liftF[SQLDataOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): SQLDataIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): SQLDataIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): SQLDataIO[A] = FF.liftF[SQLDataOp, A](Async1(k))
 
   // Smart constructors for SQLData-specific operations.
@@ -107,7 +112,7 @@ object sqldata { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): SQLDataIO[A] = module.async(k)
       def flatMap[A, B](fa: SQLDataIO[A])(f: A => SQLDataIO[B]): SQLDataIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => SQLDataIO[Either[A, B]]): SQLDataIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => SQLDataIO[A]): SQLDataIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => SQLDataIO[A]): SQLDataIO[A] = module.suspend(thunk)
     }
 
 }

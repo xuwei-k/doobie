@@ -20,19 +20,19 @@ lazy val sourcecodeVersion    = "0.1.4"
 lazy val specs2Version        = "3.9.5"
 
 // Our set of warts
-lazy val doobieWarts =
-  Warts.allBut(
-    Wart.Any,                 // false positives
-    Wart.ArrayEquals,         // false positives
-    Wart.Nothing,             // false positives
-    Wart.Null,                // Java API under the hood; we have to deal with null
-    Wart.Product,             // false positives
-    Wart.Serializable,        // false positives
-    Wart.ImplicitConversion,  // we know what we're doing
-    Wart.Throw,               // TODO: switch to ApplicativeError.fail in most places
-    Wart.PublicInference,     // fails https://github.com/wartremover/wartremover/issues/398
-    Wart.ImplicitParameter    // only used for Pos, but evidently can't be suppressed
-  )
+lazy val doobieWarts = Nil
+  // Warts.allBut(
+  //   Wart.Any,                 // false positives
+  //   Wart.ArrayEquals,         // false positives
+  //   Wart.Nothing,             // false positives
+  //   Wart.Null,                // Java API under the hood; we have to deal with null
+  //   Wart.Product,             // false positives
+  //   Wart.Serializable,        // false positives
+  //   Wart.ImplicitConversion,  // we know what we're doing
+  //   Wart.Throw,               // TODO: switch to ApplicativeError.fail in most places
+  //   Wart.PublicInference,     // fails https://github.com/wartremover/wartremover/issues/398
+  //   Wart.ImplicitParameter    // only used for Pos, but evidently can't be suppressed
+  // )
 
 // This is used in a couple places. Might be nice to separate these things out.
 lazy val postgisDep = "net.postgis" % "postgis-jdbc" % postGisVersion
@@ -298,6 +298,7 @@ lazy val core = project
 lazy val example = project
   .in(file("modules/example"))
   .settings(doobieSettings ++ noPublishSettings)
+  .disablePlugins(BackgroundRunPlugin) // This makes the weird background debugging info go away
   .dependsOn(core, postgres, specs2, scalatest, hikari, h2)
 
 lazy val postgres = project

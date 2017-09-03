@@ -5,7 +5,6 @@
 package doobie
 package util
 
-import cats._, cats.effect._
 import cats.implicits._
 import cats.{ Functor, Alternative }
 import cats.functor.{ Contravariant, Profunctor }
@@ -13,15 +12,9 @@ import cats.data.NonEmptyList
 
 import doobie.implicits._
 import doobie.util.analysis.Analysis
-import doobie.util.log.{ LogEvent, ExecFailure, ProcessingFailure, Success }
 import doobie.util.pos.Pos
 
 import scala.collection.generic.CanBuildFrom
-import scala.Predef.longWrapper
-import scala.concurrent.duration.{ FiniteDuration, NANOSECONDS }
-
-import java.sql.ResultSet
-
 
 import fs2.Stream
 
@@ -50,33 +43,12 @@ object query {
     // LogHandler is protected for now.
     protected val logHandler: LogHandler
 
-    private val now: PreparedStatementIO[Long] = FPS.delay(System.nanoTime)
-    private def fail[T](t: Throwable): PreparedStatementIO[T] = FPS.delay(throw t)
+    // private val now: PreparedStatementIO[Long] = FPS.delay(System.nanoTime)
+    // private def fail[T](t: Throwable): PreparedStatementIO[T] = FPS.delay(throw t)
 
     // Equivalent to HPS.executeQuery(k) but with logging
-    private def executeQuery[T](a: A, k: ResultSetIO[T]): PreparedStatementIO[T] = {
-      // N.B. the .attempt syntax isn't working in cats. unclear why
-      val c = Predef.implicitly[Sync[PreparedStatementIO]]
-      val args = ic.toList(ai(a))
-      def diff(a: Long, b: Long) = FiniteDuration((a - b).abs, NANOSECONDS)
-      def log(e: LogEvent) = FPS.delay(logHandler.unsafeRun(e))
-      for {
-        t0 <- now
-        er <- c.attempt(FPS.executeQuery)
-        t1 <- now
-        rs <- er match {
-                case Left(e) => log(ExecFailure(sql, args, diff(t1, t0), e)) *> fail[ResultSet](e)
-                case Right(a) => a.pure[PreparedStatementIO]
-              }
-        et <- c.attempt(FPS.embed(rs, k guarantee FRS.close))
-        t2 <- now
-        t  <- et match {
-                case Left(e) => log(ProcessingFailure(sql, args, diff(t1, t0), diff(t2, t1), e)) *> fail(e)
-                case Right(a) => a.pure[PreparedStatementIO]
-              }
-        _  <- log(Success(sql, args, diff(t1, t0), diff(t2, t1)))
-      } yield t
-    }
+    private def executeQuery[T](k: ResultSetIO[T]): PreparedStatementIO[T] =
+      FPS.executeQuery.flatMap(rs => FPS.embed(rs, k guarantee FRS.close))
 
     /**
      * The SQL string.
@@ -148,7 +120,7 @@ object query {
      * @group Results
      */
     def to[F[_]](a: A)(implicit cbf: CanBuildFrom[Nothing, B, F[B]]): ConnectionIO[F[B]] =
-      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(a, HRS.buildMap[F,O,B](ob)))
+      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(HRS.buildMap[F,O,B](ob)))
 
     /**
      * Apply the argument `a` to construct a program in
@@ -157,7 +129,7 @@ object query {
      * @group Results
      */
     def accumulate[F[_]: Alternative](a: A): ConnectionIO[F[B]] =
-      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(a, HRS.accumulate[F, O].map(_.map(ob))))
+      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(HRS.accumulate[F, O].map(_.map(ob))))
 
     /**
      * Apply the argument `a` to construct a program in
@@ -166,7 +138,7 @@ object query {
      * @group Results
      */
     def unique(a: A): ConnectionIO[B] =
-      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(a, HRS.getUnique[O])).map(ob)
+      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(HRS.getUnique[O])).map(ob)
 
     /**
      * Apply the argument `a` to construct a program in
@@ -175,7 +147,7 @@ object query {
      * @group Results
      */
     def option(a: A): ConnectionIO[Option[B]] =
-      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(a, HRS.getOption[O])).map(_.map(ob))
+      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(HRS.getOption[O])).map(_.map(ob))
 
     /**
       * Apply the argument `a` to construct a program in
@@ -184,7 +156,7 @@ object query {
       * @group Results
       */
     def nel(a: A): ConnectionIO[NonEmptyList[B]] =
-      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(a, HRS.nel[O])).map(_.map(ob))
+      HC.prepareStatement(sql)(HPS.set(ai(a)) *> executeQuery(HRS.nel[O])).map(_.map(ob))
 
     /**
      * Convenience method; equivalent to `to[List]`

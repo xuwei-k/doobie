@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -44,7 +40,9 @@ object driver { module =>
       def raw[A](f: Driver => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => DriverIO[A]): F[A]
       def handleErrorWith[A](fa: DriverIO[A], f: Throwable => DriverIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // Driver
@@ -68,10 +66,16 @@ object driver { module =>
     final case class Delay[A](a: () => A) extends DriverOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: DriverIO[A], f: Throwable => DriverIO[A]) extends DriverOp[A] {
+    case class Suspend[A](a: () => DriverIO[A]) extends DriverOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: DriverIO[A], f: Throwable => DriverIO[A]) extends DriverOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends DriverOp[A] {
+    case class RaiseError[A](t: Throwable) extends DriverOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends DriverOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -106,8 +110,9 @@ object driver { module =>
   def raw[A](f: Driver => A): DriverIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[DriverOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): DriverIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => DriverIO[A]): DriverIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: DriverIO[A], f: Throwable => DriverIO[A]): DriverIO[A] = FF.liftF[DriverOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): DriverIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): DriverIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): DriverIO[A] = FF.liftF[DriverOp, A](Async1(k))
 
   // Smart constructors for Driver-specific operations.
@@ -129,7 +134,7 @@ object driver { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): DriverIO[A] = module.async(k)
       def flatMap[A, B](fa: DriverIO[A])(f: A => DriverIO[B]): DriverIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => DriverIO[Either[A, B]]): DriverIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => DriverIO[A]): DriverIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => DriverIO[A]): DriverIO[A] = module.suspend(thunk)
     }
 
 }

@@ -1,7 +1,3 @@
-// Copyright (c) 2013-2017 Rob Norris
-// This software is licensed under the MIT License (MIT).
-// For more information see LICENSE or https://opensource.org/licenses/MIT
-
 package doobie.free
 
 import cats.~>
@@ -55,7 +51,9 @@ object sqlinput { module =>
       def raw[A](f: SQLInput => A): F[A]
       def embed[A](e: Embedded[A]): F[A]
       def delay[A](a: () => A): F[A]
+      def suspend[A](a: () => SQLInputIO[A]): F[A]
       def handleErrorWith[A](fa: SQLInputIO[A], f: Throwable => SQLInputIO[A]): F[A]
+      def raiseError[A](t: Throwable): F[A]
       def async[A](k: (Either[Throwable, A] => Unit) => Unit): F[A]
 
       // SQLInput
@@ -100,10 +98,16 @@ object sqlinput { module =>
     final case class Delay[A](a: () => A) extends SQLInputOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.delay(a)
     }
-    final case class HandleErrorWith[A](fa: SQLInputIO[A], f: Throwable => SQLInputIO[A]) extends SQLInputOp[A] {
+    case class Suspend[A](a: () => SQLInputIO[A]) extends SQLInputOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.suspend(a)
+    }
+    case class HandleErrorWith[A](fa: SQLInputIO[A], f: Throwable => SQLInputIO[A]) extends SQLInputOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.handleErrorWith(fa, f)
     }
-    final case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends SQLInputOp[A] {
+    case class RaiseError[A](t: Throwable) extends SQLInputOp[A] {
+      def visit[F[_]](v: Visitor[F]) = v.raiseError(t)
+    }
+    case class Async1[A](k: (Either[Throwable, A] => Unit) => Unit) extends SQLInputOp[A] {
       def visit[F[_]](v: Visitor[F]) = v.async(k)
     }
 
@@ -201,8 +205,9 @@ object sqlinput { module =>
   def raw[A](f: SQLInput => A): SQLInputIO[A] = FF.liftF(Raw(f))
   def embed[F[_], J, A](j: J, fa: FF[F, A])(implicit ev: Embeddable[F, J]): FF[SQLInputOp, A] = FF.liftF(Embed(ev.embed(j, fa)))
   def delay[A](a: => A): SQLInputIO[A] = FF.liftF(Delay(() => a))
+  def suspend[A](a: => SQLInputIO[A]): SQLInputIO[A] = FF.liftF(Suspend(() => a))
   def handleErrorWith[A](fa: SQLInputIO[A], f: Throwable => SQLInputIO[A]): SQLInputIO[A] = FF.liftF[SQLInputOp, A](HandleErrorWith(fa, f))
-  def raiseError[A](err: Throwable): SQLInputIO[A] = delay(throw err)
+  def raiseError[A](err: Throwable): SQLInputIO[A] = FF.liftF(RaiseError(err))
   def async[A](k: (Either[Throwable, A] => Unit) => Unit): SQLInputIO[A] = FF.liftF[SQLInputOp, A](Async1(k))
 
   // Smart constructors for SQLInput-specific operations.
@@ -245,7 +250,7 @@ object sqlinput { module =>
       def async[A](k: (Either[Throwable,A] => Unit) => Unit): SQLInputIO[A] = module.async(k)
       def flatMap[A, B](fa: SQLInputIO[A])(f: A => SQLInputIO[B]): SQLInputIO[B] = M.flatMap(fa)(f)
       def tailRecM[A, B](a: A)(f: A => SQLInputIO[Either[A, B]]): SQLInputIO[B] = M.tailRecM(a)(f)
-      def suspend[A](thunk: => SQLInputIO[A]): SQLInputIO[A] = M.flatten(module.delay(thunk))
+      def suspend[A](thunk: => SQLInputIO[A]): SQLInputIO[A] = module.suspend(thunk)
     }
 
 }
