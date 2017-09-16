@@ -15,7 +15,7 @@ import java.sql.RowIdLifetime
 object databasemetadata { module =>
 
   // Algebra of operations for DatabaseMetaData. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait DatabaseMetaDataOp[A] {
+  sealed trait DatabaseMetaDataOp[A] extends Product with Serializable {
     def visit[F[_]](v: DatabaseMetaDataOp.Visitor[F]): F[A]
   }
 

@@ -10,7 +10,7 @@ import org.postgresql.copy.{ CopyOut => PGCopyOut }
 object copyout { module =>
 
   // Algebra of operations for PGCopyOut. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait CopyOutOp[A] {
+  sealed trait CopyOutOp[A] extends Product with Serializable {
     def visit[F[_]](v: CopyOutOp.Visitor[F]): F[A]
   }
 

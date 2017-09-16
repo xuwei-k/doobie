@@ -15,7 +15,7 @@ import java.util.logging.Logger
 object driver { module =>
 
   // Algebra of operations for Driver. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait DriverOp[A] {
+  sealed trait DriverOp[A] extends Product with Serializable {
     def visit[F[_]](v: DriverOp.Visitor[F]): F[A]
   }
 

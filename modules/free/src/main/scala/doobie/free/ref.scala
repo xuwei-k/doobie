@@ -12,7 +12,7 @@ import java.util.Map
 object ref { module =>
 
   // Algebra of operations for Ref. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait RefOp[A] {
+  sealed trait RefOp[A] extends Product with Serializable {
     def visit[F[_]](v: RefOp.Visitor[F]): F[A]
   }
 

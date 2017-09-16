@@ -11,7 +11,7 @@ import org.postgresql.largeobject.LargeObjectManager
 object largeobjectmanager { module =>
 
   // Algebra of operations for LargeObjectManager. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait LargeObjectManagerOp[A] {
+  sealed trait LargeObjectManagerOp[A] extends Product with Serializable {
     def visit[F[_]](v: LargeObjectManagerOp.Visitor[F]): F[A]
   }
 

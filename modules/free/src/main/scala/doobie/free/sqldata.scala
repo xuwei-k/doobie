@@ -13,7 +13,7 @@ import java.sql.SQLOutput
 object sqldata { module =>
 
   // Algebra of operations for SQLData. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait SQLDataOp[A] {
+  sealed trait SQLDataOp[A] extends Product with Serializable {
     def visit[F[_]](v: SQLDataOp.Visitor[F]): F[A]
   }
 

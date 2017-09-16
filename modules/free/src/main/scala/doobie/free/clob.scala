@@ -15,7 +15,7 @@ import java.sql.Clob
 object clob { module =>
 
   // Algebra of operations for Clob. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait ClobOp[A] {
+  sealed trait ClobOp[A] extends Product with Serializable {
     def visit[F[_]](v: ClobOp.Visitor[F]): F[A]
   }
 

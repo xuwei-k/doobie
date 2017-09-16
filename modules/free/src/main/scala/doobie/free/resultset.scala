@@ -32,7 +32,7 @@ import java.util.Map
 object resultset { module =>
 
   // Algebra of operations for ResultSet. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait ResultSetOp[A] {
+  sealed trait ResultSetOp[A] extends Product with Serializable {
     def visit[F[_]](v: ResultSetOp.Visitor[F]): F[A]
   }
 

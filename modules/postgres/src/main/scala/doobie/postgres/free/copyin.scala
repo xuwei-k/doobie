@@ -10,7 +10,7 @@ import org.postgresql.copy.{ CopyIn => PGCopyIn }
 object copyin { module =>
 
   // Algebra of operations for PGCopyIn. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait CopyInOp[A] {
+  sealed trait CopyInOp[A] extends Product with Serializable {
     def visit[F[_]](v: CopyInOp.Visitor[F]): F[A]
   }
 

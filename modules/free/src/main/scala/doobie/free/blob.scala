@@ -12,7 +12,7 @@ import java.sql.Blob
 object blob { module =>
 
   // Algebra of operations for Blob. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait BlobOp[A] {
+  sealed trait BlobOp[A] extends Product with Serializable {
     def visit[F[_]](v: BlobOp.Visitor[F]): F[A]
   }
 

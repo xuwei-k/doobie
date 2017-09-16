@@ -34,7 +34,7 @@ import java.util.Map
 object callablestatement { module =>
 
   // Algebra of operations for CallableStatement. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait CallableStatementOp[A] {
+  sealed trait CallableStatementOp[A] extends Product with Serializable {
     def visit[F[_]](v: CallableStatementOp.Visitor[F]): F[A]
   }
 

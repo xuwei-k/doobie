@@ -19,7 +19,7 @@ import org.postgresql.replication.PGReplicationConnection
 object pgconnection { module =>
 
   // Algebra of operations for PGConnection. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait PGConnectionOp[A] {
+  sealed trait PGConnectionOp[A] extends Product with Serializable {
     def visit[F[_]](v: PGConnectionOp.Visitor[F]): F[A]
   }
 

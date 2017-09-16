@@ -27,7 +27,7 @@ import java.util.concurrent.Executor
 object connection { module =>
 
   // Algebra of operations for Connection. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait ConnectionOp[A] {
+  sealed trait ConnectionOp[A] extends Product with Serializable {
     def visit[F[_]](v: ConnectionOp.Visitor[F]): F[A]
   }
 

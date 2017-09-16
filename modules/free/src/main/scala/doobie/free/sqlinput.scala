@@ -26,7 +26,7 @@ import java.sql.{ Array => SqlArray }
 object sqlinput { module =>
 
   // Algebra of operations for SQLInput. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait SQLInputOp[A] {
+  sealed trait SQLInputOp[A] extends Product with Serializable {
     def visit[F[_]](v: SQLInputOp.Visitor[F]): F[A]
   }
 

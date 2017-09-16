@@ -16,7 +16,7 @@ import java.sql.NClob
 object nclob { module =>
 
   // Algebra of operations for NClob. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait NClobOp[A] {
+  sealed trait NClobOp[A] extends Product with Serializable {
     def visit[F[_]](v: NClobOp.Visitor[F]): F[A]
   }
 

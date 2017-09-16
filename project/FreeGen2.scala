@@ -217,7 +217,7 @@ class FreeGen2(managed: List[Class[_]], pkg: String, renames: Map[Class[_], Stri
     |object $mname { module =>
     |
     |  // Algebra of operations for $sname. Each accepts a visitor as an alternatie to pattern-matching.
-    |  sealed trait ${opname}[A] {
+    |  sealed trait ${opname}[A] extends Product with Serializable {
     |    def visit[F[_]](v: ${opname}.Visitor[F]): F[A]
     |  }
     |

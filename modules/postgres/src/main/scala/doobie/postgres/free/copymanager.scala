@@ -18,7 +18,7 @@ import org.postgresql.copy.{ CopyOut => PGCopyOut }
 object copymanager { module =>
 
   // Algebra of operations for PGCopyManager. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait CopyManagerOp[A] {
+  sealed trait CopyManagerOp[A] extends Product with Serializable {
     def visit[F[_]](v: CopyManagerOp.Visitor[F]): F[A]
   }
 

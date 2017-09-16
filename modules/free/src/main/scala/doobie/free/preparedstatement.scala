@@ -33,7 +33,7 @@ import java.util.Calendar
 object preparedstatement { module =>
 
   // Algebra of operations for PreparedStatement. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait PreparedStatementOp[A] {
+  sealed trait PreparedStatementOp[A] extends Product with Serializable {
     def visit[F[_]](v: PreparedStatementOp.Visitor[F]): F[A]
   }
 

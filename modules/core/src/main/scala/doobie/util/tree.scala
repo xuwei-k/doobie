@@ -17,6 +17,11 @@ object Tree {
       Cofree(h, Eval.now(t))
   }
 
+  implicit class TreeOps[A](ta: Tree[A]) {
+    def zipper: Zipper[A] =
+      Zipper(ta, Nil, Nil, Nil)
+  }
+
   /**
    * A zipper over `Cofree[List, A]`, distilled from
    * [[https://github.com/scalaz/scalaz/blob/series/7.3.x/core/src/main/scala/scalaz/TreeLoc.scala Scalaz's TreeLoc]],
@@ -117,9 +122,7 @@ object Tree {
 
     def map[B](f: A => B): Zipper[B] = {
       Zipper(
-        focus.map(f),
-        ls.map(_.map(f)),
-        rs.map(_.map(f)),
+        focus.map(f), ls.map(_.map(f)), rs.map(_.map(f)),
         ps.map { case (l, t, r) => (l.map(_.map(f)), f(t), r.map(_.map(f))) }
       )
     }

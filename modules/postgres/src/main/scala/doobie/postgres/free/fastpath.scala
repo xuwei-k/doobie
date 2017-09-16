@@ -13,7 +13,7 @@ import org.postgresql.fastpath.{ Fastpath => PGFastpath }
 object fastpath { module =>
 
   // Algebra of operations for PGFastpath. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait FastpathOp[A] {
+  sealed trait FastpathOp[A] extends Product with Serializable {
     def visit[F[_]](v: FastpathOp.Visitor[F]): F[A]
   }
 

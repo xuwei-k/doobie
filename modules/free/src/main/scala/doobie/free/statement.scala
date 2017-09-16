@@ -15,7 +15,7 @@ import java.sql.Statement
 object statement { module =>
 
   // Algebra of operations for Statement. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait StatementOp[A] {
+  sealed trait StatementOp[A] extends Product with Serializable {
     def visit[F[_]](v: StatementOp.Visitor[F]): F[A]
   }
 

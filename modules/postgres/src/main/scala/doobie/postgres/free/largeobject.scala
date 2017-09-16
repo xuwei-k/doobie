@@ -12,7 +12,7 @@ import org.postgresql.largeobject.LargeObject
 object largeobject { module =>
 
   // Algebra of operations for LargeObject. Each accepts a visitor as an alternatie to pattern-matching.
-  sealed trait LargeObjectOp[A] {
+  sealed trait LargeObjectOp[A] extends Product with Serializable {
     def visit[F[_]](v: LargeObjectOp.Visitor[F]): F[A]
   }
 
