@@ -20,7 +20,6 @@ lazy val munitVersion         = "0.7.26"
 lazy val shapelessVersion     = "2.3.7"
 lazy val silencerVersion      = "1.7.1"
 lazy val specs2Version        = "4.11.0"
-lazy val scala212Version      = "2.12.12"
 lazy val scala213Version      = "2.13.5"
 lazy val scala30Version    = "3.0.0"
 lazy val slf4jVersion         = "1.7.30"
@@ -55,7 +54,7 @@ lazy val commonSettings =
   compilerFlags ++
   Seq(
     scalaVersion := scala213Version,
-    crossScalaVersions := Seq(scala212Version, scala213Version, scala30Version),
+    crossScalaVersions := Seq(scala213Version, scala30Version),
 
     // These sbt-header settings can't be set in ThisBuild for some reason
     headerMappings := headerMappings.value + (HeaderFileType.scala -> HeaderCommentStyle.cppStyleLineComment),
