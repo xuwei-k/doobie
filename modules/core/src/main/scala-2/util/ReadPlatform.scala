@@ -5,37 +5,31 @@
 package doobie.util
 
 import shapeless.{ HList, HNil, ::, Generic, Lazy, <:!< }
-import shapeless.labelled.{ field, FieldType }
 
 trait ReadPlatform extends LowerPriorityRead { this: Read.type =>
 
-  implicit def recordRead[K <: Symbol, H, T <: HList](
-    implicit H: Lazy[Read[H]],
-              T: Lazy[Read[T]]
-  ): Read[FieldType[K, H] :: T] =
-    new Read[FieldType[K, H] :: T](
-      H.value.gets ++ T.value.gets,
-      (rs, n) => field[K](H.value.unsafeGet(rs, n)) :: T.value.unsafeGet(rs, n + H.value.length)
-    )
+}
 
+
+final case class ProductRead [A <: HList] private(value: Read[A])
+
+object ProductRead {
+  implicit val nil: ProductRead[HNil] =
+    ProductRead[HNil](new Read[HNil](Nil, (_, _) => HNil))
+
+  implicit def cons[H, T <: HList](H: Read[H], T: ProductRead[T]): ProductRead[H :: T] =
+    ProductRead(
+      new Read[H :: T](
+        H.gets ++ T.value.gets,
+        (rs, n) => H.unsafeGet(rs, n) :: T.value.unsafeGet(rs, n + H.length)
+      )
+    )
 }
 
 trait LowerPriorityRead extends EvenLower { this: Read.type =>
 
-  implicit def product[H, T <: HList](
-    implicit H: Lazy[Read[H]],
-              T: Lazy[Read[T]]
-  ): Read[H :: T] =
-    new Read[H :: T](
-      H.value.gets ++ T.value.gets,
-      (rs, n) => H.value.unsafeGet(rs, n) :: T.value.unsafeGet(rs, n + H.value.length)
-    )
-
-  implicit def emptyProduct: Read[HNil] =
-    new Read[HNil](Nil, (_, _) => HNil)
-
-  implicit def generic[F, G](implicit gen: Generic.Aux[F, G], G: Lazy[Read[G]]): Read[F] =
-    new Read[F](G.value.gets, (rs, n) => gen.from(G.value.unsafeGet(rs, n)))
+  implicit def generic[F, G <: HList](implicit gen: Generic.Aux[F, G], G: Lazy[ProductRead[G]]): Read[F] =
+    new Read[F](G.value.value.gets, (rs, n) => gen.from(G.value.value.unsafeGet(rs, n)))
 
 }
 
