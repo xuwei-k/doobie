@@ -5,27 +5,38 @@
 package doobie.util
 
 import scala.deriving.Mirror
+import scala.compiletime.summonAll
 
-trait ReadPlatform:
+object ReadPlatform {
+  final class SeqProduct(values: Seq[Any]) extends Product {
+    def canEqual(that: Any): Boolean = true
+    def productArity: Int = values.length
+    def productElement(n: Int): Any = values(n)
+  }
 
-  // Trivial Read for EmptyTuple
-  given Read[EmptyTuple] =
-    new Read[EmptyTuple](Nil, (_, _) => EmptyTuple)
-
-  // Read for head and tail.
-  given [H, T <: Tuple](using H: => Read[H], T: => Read[T]): Read[H *: T] =
-    new Read[H *: T](
-      H.gets ++ T.gets,
-      (rs, n) => H.unsafeGet(rs, n) *: T.unsafeGet(rs, n + H.length)
+  def productImpl[A <: Product](mirror: Mirror.ProductOf[A], values: Tuple.Map[mirror.MirroredElemTypes, Read]): Read[A] = {
+    val reads: List[Read[?]] = values.toList.map(_.asInstanceOf[Read[?]])
+    new Read[A](
+      reads.flatMap(_.gets),
+      (rs, i) =>
+        mirror.fromProduct(
+          new SeqProduct(
+            reads.zipWithIndex.map { (r, n) =>
+              r.unsafeGet(rs, i + reads.take(n).map(_.length).sum)
+            }
+          )
+        )
     )
+  }
+}
 
-  // Generic Read for products.
-  given [P <: Product, A](
-    using m: Mirror.ProductOf[P],
-          i: A =:= m.MirroredElemTypes,
-          w: Read[A]
-  ): Read[P] =
-    w.map(a => m.fromProduct(i(a)))
+trait ReadPlatform {
+
+  inline given [A <: Product](using mirror: Mirror.ProductOf[A]): Read[A] =
+    ReadPlatform.productImpl(
+      mirror,
+      summonAll[Tuple.Map[mirror.MirroredElemTypes, Read]]
+    )
 
   given roe: Read[Option[EmptyTuple]] =
     new Read[Option[EmptyTuple]](Nil, (_, _) => Some(EmptyTuple))
@@ -62,3 +73,5 @@ trait ReadPlatform:
           w: Read[Option[A]]
   ): Read[Option[P]] =
     w.map(a => a.map(a => m.fromProduct(i(a))))
+
+}
