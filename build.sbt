@@ -21,7 +21,7 @@ lazy val shapelessVersion     = "2.3.7"
 lazy val silencerVersion      = "1.7.1"
 lazy val specs2Version        = "4.11.0"
 lazy val scala213Version      = "2.13.5"
-lazy val scala30Version    = "3.0.0"
+lazy val scala30Version       = "3.3.5"
 lazy val slf4jVersion         = "1.7.30"
 
 // These are releases to ignore during MiMa checks
