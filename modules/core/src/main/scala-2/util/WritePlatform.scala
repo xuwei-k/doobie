@@ -5,21 +5,9 @@
 package doobie.util
 
 import shapeless.{ HList, HNil, ::, Generic, Lazy, <:!< }
-import shapeless.labelled.{ FieldType }
 
 trait WritePlatform extends LowerPriorityWrite {
 
-  implicit def recordWrite[K <: Symbol, H, T <: HList](
-    implicit H: Lazy[Write[H]],
-              T: Lazy[Write[T]]
-  ): Write[FieldType[K, H] :: T] = {
-    new Write(
-      H.value.puts ++ T.value.puts,
-      { case h :: t => H.value.toList(h) ++ T.value.toList(t) },
-      { case (ps, n, h :: t) => H.value.unsafeSet(ps, n, h); T.value.unsafeSet(ps, n + H.value.length, t) },
-      { case (rs, n, h :: t) => H.value.unsafeUpdate(rs, n, h); T.value.unsafeUpdate(rs, n + H.value.length, t) }
-    )
-  }
 
 }
 

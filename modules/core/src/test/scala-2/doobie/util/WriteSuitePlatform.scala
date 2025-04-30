@@ -5,16 +5,9 @@
 package doobie
 package util
 
-import shapeless._, shapeless.record._
+import shapeless._
 
 trait WriteSuitePlatform { self: munit.FunSuite =>
-
-  test("Write should exist for shapeless record types") {
-    type DL = (Double, Long)
-    type A  = Record.`'foo -> Int, 'bar -> String, 'baz -> DL, 'quz -> Woozle`.T
-    util.Write[A]
-    util.Write[(A, A)]
-  }
 
   case class Woozle(a: (String, Int), b: Int :: String :: HNil, c: Boolean)
 

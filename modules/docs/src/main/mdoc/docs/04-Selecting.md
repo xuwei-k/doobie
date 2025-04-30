@@ -142,21 +142,6 @@ sql"select code, name, population, gnp from country"
   .unsafeRunSync()
 ```
 
-And with a shapeless record:
-
-```scala mdoc
-import shapeless.record.Record
-
-type Rec = Record.`'code -> String, 'name -> String, 'pop -> Int, 'gnp -> Option[Double]`.T
-
-sql"select code, name, population, gnp from country"
-  .query[Rec]
-  .stream
-  .take(5)
-  .quick
-  .unsafeRunSync()
-```
-
 And again, mapping rows to a case class.
 
 ```scala mdoc:silent

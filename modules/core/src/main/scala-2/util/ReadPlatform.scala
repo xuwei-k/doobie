@@ -5,18 +5,9 @@
 package doobie.util
 
 import shapeless.{ HList, HNil, ::, Generic, Lazy, <:!< }
-import shapeless.labelled.{ field, FieldType }
 
 trait ReadPlatform extends LowerPriorityRead { this: Read.type =>
 
-  implicit def recordRead[K <: Symbol, H, T <: HList](
-    implicit H: Lazy[Read[H]],
-              T: Lazy[Read[T]]
-  ): Read[FieldType[K, H] :: T] =
-    new Read[FieldType[K, H] :: T](
-      H.value.gets ++ T.value.gets,
-      (rs, n) => field[K](H.value.unsafeGet(rs, n)) :: T.value.unsafeGet(rs, n + H.value.length)
-    )
 
 }
 
